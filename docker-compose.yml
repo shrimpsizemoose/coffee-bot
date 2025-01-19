@@ -1,0 +1,15 @@
+
+services:
+  coffee-chat:
+    build: .
+    image: ghcr.io/shrimpsizemoose/coffee-bot:v1.0
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+    environment:
+      - CONFIG_PATH=/config/config.toml
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
