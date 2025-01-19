@@ -54,7 +54,13 @@ func isWeekend(day time.Weekday, weekendDays []time.Weekday) bool {
 	return false
 }
 
-func getDayMessage(config *Config, now time.Time) string {
+func getMessages(config *Config, now time.Time) []string {
+	if isWeekend(now.Weekday(), config.WeekendDays) {
+		log.Printf("No message on weekend at %v", now)
+		return nil
+	}
+	messages := []string{getRandomMessage(config.DefaultMsgs)}
+
 	var customMsg string
 	switch now.Weekday() {
 	case time.Monday:
@@ -70,19 +76,20 @@ func getDayMessage(config *Config, now time.Time) string {
 	}
 
 	if customMsg != "" {
-		return customMsg
+		messages = append(messages, customMsg)
 	}
-	return getRandomMessage(config.DefaultMsgs)
+	return messages
 }
 
-func sendMessage(bot *tgbotapi.BotAPI, chatID int64, message string) error {
-	if message == "" {
-		return nil
+func sendMessage(bot *tgbotapi.BotAPI, chatID int64, messages []string) error {
+	for _, message := range messages {
+		msg := tgbotapi.NewMessage(chatID, message)
+		if _, err := bot.Send(msg); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
 	}
 
-	msg := tgbotapi.NewMessage(chatID, message)
-	_, err := bot.Send(msg)
-	return err
+	return nil
 }
 
 func main() {
@@ -104,14 +111,13 @@ func main() {
 	c := cron.New()
 	_, err = c.AddFunc(config.Schedule, func() {
 		now := time.Now()
-		if isWeekend(now.Weekday(), config.WeekendDays) {
-			log.Printf("No message on weekend")
-		}
-		message := getDayMessage(config, now)
-		if err := sendMessage(bot, config.ChatID, message); err != nil {
-			log.Printf("Failed to send message: %v", err)
-		} else {
-			log.Printf("Message %s sent succesfully on %v", message, now)
+		messages := getMessages(config, now)
+		if len(messages) > 0 {
+			if err := sendMessage(bot, config.ChatID, messages); err != nil {
+				log.Printf("Failed to send messages: %v", err)
+			} else {
+				log.Printf("%d Message(s) sent succesfully on %v", len(messages), now)
+			}
 		}
 	})
 
