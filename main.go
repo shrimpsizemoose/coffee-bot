@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"reflect"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -41,12 +42,31 @@ func loadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
-func getRandomMessage(messages []string) string {
-	return messages[rand.Intn(len(messages))]
+func (c *Config) Tell() {
+	if len(c.TelegramToken) > 0 {
+		log.Println("Bot token is set 👍🏻")
+	}
+	log.Printf("Running on cron schedule '%s' in chat %d", c.Schedule, c.ChatID)
+	log.Printf("I have %d predefined default message (triggered every day)", len(c.DefaultMsgs))
+
+	var customs []string
+	v := reflect.ValueOf(c.DayMessages)
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).Len() > 0 {
+			day := v.Type().Field(i).Name
+			customs = append(customs, day)
+		}
+	}
+	log.Printf("Custom messages are set for: %v", customs)
+	log.Printf("Silent days: %v", c.WeekendDays)
 }
 
-func isWeekend(day time.Weekday, weekendDays []time.Weekday) bool {
-	for _, weekend := range weekendDays {
+func (c *Config) getRandomMessage() string {
+	return c.DefaultMsgs[rand.Intn(len(c.DefaultMsgs))]
+}
+
+func (c *Config) isWeekend(day time.Weekday) bool {
+	for _, weekend := range c.WeekendDays {
 		if day == weekend {
 			return true
 		}
@@ -54,25 +74,25 @@ func isWeekend(day time.Weekday, weekendDays []time.Weekday) bool {
 	return false
 }
 
-func getMessages(config *Config, now time.Time) []string {
-	if isWeekend(now.Weekday(), config.WeekendDays) {
+func (c *Config) PickMessages(now time.Time) []string {
+	if c.isWeekend(now.Weekday()) {
 		log.Printf("No message on weekend at %v", now)
 		return nil
 	}
-	messages := []string{getRandomMessage(config.DefaultMsgs)}
+	messages := []string{c.getRandomMessage()}
 
 	var customMsg string
 	switch now.Weekday() {
 	case time.Monday:
-		customMsg = config.DayMessages.Monday
+		customMsg = c.DayMessages.Monday
 	case time.Tuesday:
-		customMsg = config.DayMessages.Tuesday
+		customMsg = c.DayMessages.Tuesday
 	case time.Wednesday:
-		customMsg = config.DayMessages.Wednesday
+		customMsg = c.DayMessages.Wednesday
 	case time.Thursday:
-		customMsg = config.DayMessages.Thursday
+		customMsg = c.DayMessages.Thursday
 	case time.Friday:
-		customMsg = config.DayMessages.Friday
+		customMsg = c.DayMessages.Friday
 	}
 
 	if customMsg != "" {
@@ -98,10 +118,10 @@ func main() {
 		configPath = "config.toml"
 	}
 	config, err := loadConfig(configPath)
-
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	config.Tell()
 
 	bot, err := tgbotapi.NewBotAPI(config.TelegramToken)
 	if err != nil {
@@ -111,7 +131,7 @@ func main() {
 	c := cron.New()
 	_, err = c.AddFunc(config.Schedule, func() {
 		now := time.Now()
-		messages := getMessages(config, now)
+		messages := config.PickMessages(now)
 		if len(messages) > 0 {
 			if err := sendMessage(bot, config.ChatID, messages); err != nil {
 				log.Printf("Failed to send messages: %v", err)

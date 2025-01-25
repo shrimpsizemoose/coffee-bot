@@ -1,6 +1,7 @@
 telegram_token = "YOUR_BOT_TOKEN"
 chat_id = 123456789 # Your chat ID
 schedule = "5 7 * * *"
+weekend_days = [6, 0] # (0 = Sunday, 6 = Saturday)
 
 default_messages = [
     "Доброе утро мои чуваки! Как насчёт чашечки кофе или чая?",
@@ -22,5 +23,3 @@ tuesday = "Сегодня вторник! А значит это день кру
 wednesday = "На календаре среда. Предлагаю обсудить что вы там слушали музыкального за эту неделю"
 thursday = "" # No special message for Thursday
 friday = "Оппа! А сегодня пятница. Если записываете кружочек то подкладывайте на фон музончик какой-нибудь"
-
-weekend_days = [6, 0] # Saturday and Sunday (0 = Sunday, 6 = Saturday)
