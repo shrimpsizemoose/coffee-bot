@@ -104,6 +104,11 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 			ChatID: telego.ChatID{ID: chatConfig.ChatID},
 			Text:   message,
 		}
+
+		if chatConfig.TopicID != nil {
+			params.MessageThreadID = *chatConfig.TopicID
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_, err := bot.SendMessage(ctx, params)
