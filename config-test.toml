@@ -1,0 +1,20 @@
+telegram_token = "123456789:FAKE_TOKEN_FOR_TESTING"
+schedule = "*/1 * * * *"
+weekend_days = []
+
+[[chats]]
+chat_id = -1001111111111
+default_messages = [
+    "Тест: обычный чат - кофе?",
+    "Тест: простое сообщение в группу"
+]
+day_messages = { monday = "Понедельник в обычном чате", tuesday = "Вторник - тест обычного чата" }
+
+[[chats]]
+chat_id = -1002222222222
+topic_id = 2
+default_messages = [
+    "Тест: сообщение в топик - чай?",
+    "Тест: топик работает!"
+]
+day_messages = { monday = "Понедельник в топике", tuesday = "Вторник - тест топика" }

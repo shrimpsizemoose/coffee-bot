@@ -1,8 +1,10 @@
 telegram_token = "YOUR_BOT_TOKEN"
-chat_id = 123456789 # Your chat ID
 schedule = "5 7 * * *"
 weekend_days = [6, 0] # (0 = Sunday, 6 = Saturday)
 
+# Regular chat example
+[[chats]]
+chat_id = 123456789 # Your chat ID
 default_messages = [
     "Доброе утро мои чуваки! Как насчёт чашечки кофе или чая?",
     "Если бы акулы пили чай по утрам, то они пили бы его like this lor like that? :thinking_face:",
@@ -15,11 +17,17 @@ default_messages = [
 Ф Е Ч А Й К О
 """,
 ]
+day_messages = { 
+    monday = "", 
+    tuesday = "Сегодня вторник! А значит это день кружочков!!!!!!!!11111",
+    wednesday = "На календаре среда. Предлагаю обсудить что вы там слушали музыкального за эту неделю",
+    thursday = "",
+    friday = "Оппа! А сегодня пятница. Если записываете кружочек то подкладывайте на фон музончик какой-нибудь"
+}
 
-# Messages for specific days
-[day_messages]
-monday = "" # No special message for Monday
-tuesday = "Сегодня вторник! А значит это день кружочков!!!!!!!!11111"
-wednesday = "На календаре среда. Предлагаю обсудить что вы там слушали музыкального за эту неделю"
-thursday = "" # No special message for Thursday
-friday = "Оппа! А сегодня пятница. Если записываете кружочек то подкладывайте на фон музончик какой-нибудь"
+# Chat with topic example (uncomment and configure if needed)
+# [[chats]]
+# chat_id = -1001234567890
+# topic_id = 2  # Topic thread ID
+# default_messages = ["Morning team! ☕"]
+# day_messages = { friday = "TGIF!" }
