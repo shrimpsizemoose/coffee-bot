@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -8,7 +9,7 @@ import (
 	"reflect"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/mymmrac/telego"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/robfig/cron/v3"
 )
@@ -101,10 +102,18 @@ func (c *Config) PickMessages(now time.Time) []string {
 	return messages
 }
 
-func sendMessage(bot *tgbotapi.BotAPI, chatID int64, messages []string) error {
+func sendMessage(bot *telego.Bot, chatID int64, messages []string) error {
 	for _, message := range messages {
-		msg := tgbotapi.NewMessage(chatID, message)
-		if _, err := bot.Send(msg); err != nil {
+		params := &telego.SendMessageParams{
+			ChatID: telego.ChatID{ID: chatID},
+			Text:   message,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, err := bot.SendMessage(ctx, params)
+		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
 		}
 	}
@@ -123,7 +132,7 @@ func main() {
 	}
 	config.Tell()
 
-	bot, err := tgbotapi.NewBotAPI(config.TelegramToken)
+	bot, err := telego.NewBot(config.TelegramToken)
 	if err != nil {
 		log.Fatalf("Failed to create bot: %v", err)
 	}
