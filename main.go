@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"reflect"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -14,19 +13,18 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+type ChatConfig struct {
+	ChatID      int64             `toml:"chat_id"`
+	TopicID     *int              `toml:"topic_id,omitempty"`
+	DefaultMsgs []string          `toml:"default_messages"`
+	DayMessages map[string]string `toml:"day_messages"`
+}
+
 type Config struct {
-	TelegramToken string   `toml:"telegram_token"`
-	ChatID        int64    `toml:"chat_id"`
-	Schedule      string   `toml:"schedule"`
-	DefaultMsgs   []string `toml:"default_messages"`
-	DayMessages   struct {
-		Monday    string `toml:"monday"`
-		Tuesday   string `toml:"tuesday"`
-		Wednesday string `toml:"wednesday"`
-		Thursday  string `toml:"thursday"`
-		Friday    string `toml:"friday"`
-	} `toml:"day_messages"`
-	WeekendDays []time.Weekday `toml:"weekend_days"`
+	TelegramToken string        `toml:"telegram_token"`
+	Schedule      string        `toml:"schedule"`
+	WeekendDays   []time.Weekday `toml:"weekend_days"`
+	Chats         []ChatConfig  `toml:"chats"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -47,74 +45,70 @@ func (c *Config) Tell() {
 	if len(c.TelegramToken) > 0 {
 		log.Println("Bot token is set 👍🏻")
 	}
-	log.Printf("Running on cron schedule '%s' in chat %d", c.Schedule, c.ChatID)
-	log.Printf("I have %d predefined default message (triggered every day)", len(c.DefaultMsgs))
-
-	var customs []string
-	v := reflect.ValueOf(c.DayMessages)
-	for i := 0; i < v.NumField(); i++ {
-		if v.Field(i).Len() > 0 {
-			day := v.Type().Field(i).Name
-			customs = append(customs, day)
-		}
-	}
-	log.Printf("Custom messages are set for: %v", customs)
+	log.Printf("Running on schedule '%s' for %d chat(s)", c.Schedule, len(c.Chats))
 	log.Printf("Silent days: %v", c.WeekendDays)
-}
 
-func (c *Config) getRandomMessage() string {
-	return c.DefaultMsgs[rand.Intn(len(c.DefaultMsgs))]
-}
+	for i, chat := range c.Chats {
+		topicInfo := ""
+		if chat.TopicID != nil {
+			topicInfo = fmt.Sprintf(" (topic %d)", *chat.TopicID)
+		}
+		log.Printf("Chat %d: ID=%d%s, %d default messages", i+1, chat.ChatID, topicInfo, len(chat.DefaultMsgs))
 
-func (c *Config) isWeekend(day time.Weekday) bool {
-	for _, weekend := range c.WeekendDays {
-		if day == weekend {
-			return true
+		var customDays []string
+		for day, msg := range chat.DayMessages {
+			if msg != "" {
+				customDays = append(customDays, day)
+			}
+		}
+		if len(customDays) > 0 {
+			log.Printf("  Custom messages for: %v", customDays)
 		}
 	}
-	return false
 }
 
-func (c *Config) PickMessages(now time.Time) []string {
-	if c.isWeekend(now.Weekday()) {
-		log.Printf("No message on weekend at %v", now)
-		return nil
-	}
-	messages := []string{c.getRandomMessage()}
+func (cc *ChatConfig) getRandomMessage() string {
+	return cc.DefaultMsgs[rand.Intn(len(cc.DefaultMsgs))]
+}
 
-	var customMsg string
-	switch now.Weekday() {
-	case time.Monday:
-		customMsg = c.DayMessages.Monday
-	case time.Tuesday:
-		customMsg = c.DayMessages.Tuesday
-	case time.Wednesday:
-		customMsg = c.DayMessages.Wednesday
-	case time.Thursday:
-		customMsg = c.DayMessages.Thursday
-	case time.Friday:
-		customMsg = c.DayMessages.Friday
+func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []string {
+	for _, weekend := range weekendDays {
+		if now.Weekday() == weekend {
+			log.Printf("No message on weekend at %v", now)
+			return nil
+		}
 	}
 
-	if customMsg != "" {
-		messages = append(messages, customMsg)
+	messages := []string{cc.getRandomMessage()}
+
+	dayName := map[time.Weekday]string{
+		time.Monday:    "monday",
+		time.Tuesday:   "tuesday", 
+		time.Wednesday: "wednesday",
+		time.Thursday:  "thursday",
+		time.Friday:    "friday",
 	}
+
+	if dayKey, exists := dayName[now.Weekday()]; exists {
+		if customMsg, hasMsg := cc.DayMessages[dayKey]; hasMsg && customMsg != "" {
+			messages = append(messages, customMsg)
+		}
+	}
+
 	return messages
 }
 
-func sendMessage(bot *telego.Bot, chatID int64, messages []string) error {
+func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) error {
 	for _, message := range messages {
 		params := &telego.SendMessageParams{
-			ChatID: telego.ChatID{ID: chatID},
+			ChatID: telego.ChatID{ID: chatConfig.ChatID},
 			Text:   message,
 		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
 		_, err := bot.SendMessage(ctx, params)
 		if err != nil {
-			return fmt.Errorf("failed to send message: %w", err)
+			return fmt.Errorf("failed to send message to chat %d: %w", chatConfig.ChatID, err)
 		}
 	}
 
@@ -140,12 +134,19 @@ func main() {
 	c := cron.New()
 	_, err = c.AddFunc(config.Schedule, func() {
 		now := time.Now()
-		messages := config.PickMessages(now)
-		if len(messages) > 0 {
-			if err := sendMessage(bot, config.ChatID, messages); err != nil {
-				log.Printf("Failed to send messages: %v", err)
-			} else {
-				log.Printf("%d Message(s) sent succesfully on %v", len(messages), now)
+
+		for _, chatConfig := range config.Chats {
+			messages := chatConfig.PickMessages(now, config.WeekendDays)
+			if len(messages) > 0 {
+				if err := sendMessage(bot, chatConfig, messages); err != nil {
+					log.Printf("Failed to send messages to chat %d: %v", chatConfig.ChatID, err)
+				} else {
+					topicInfo := ""
+					if chatConfig.TopicID != nil {
+						topicInfo = fmt.Sprintf(" (topic %d)", *chatConfig.TopicID)
+					}
+					log.Printf("%d Message(s) sent to chat %d%s on %v", len(messages), chatConfig.ChatID, topicInfo, now)
+				}
 			}
 		}
 	})
