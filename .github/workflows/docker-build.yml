@@ -10,7 +10,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  bulid:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
