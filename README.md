@@ -83,3 +83,26 @@ CONFIG_PATH=config-test.toml ./coffee-bot
 # Check metrics
 curl http://localhost:8080/metrics
 ```
+
+### Release Pipeline
+
+```
+Development → Push → build-and-test ✅
+           ↓
+    Ready for release → Manual release → All checks again ✅
+                                     ↓
+                                Tag created ✅
+                                     ↓
+                               docker-build → Docker image ✅
+```
+
+**Workflows:**
+- `build-and-test.yml` - Runs on every push/PR (tests, build, Go version check)
+- `release.yml` - Manual workflow to create tags after full validation
+- `docker-build.yml` - Automatically builds and publishes Docker images when tags are created
+
+**To create a release:**
+1. Go to Actions → Release → Run workflow
+2. Enter version (e.g., `v1.2`)
+3. Workflow validates, tests, and creates tag
+4. Docker image automatically publishes to `ghcr.io/shrimpsizemoose/coffee-bot:v1.2`

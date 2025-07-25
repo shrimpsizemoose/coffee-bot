@@ -13,6 +13,29 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Validate Go version compatibility
+      run: |
+        GO_MOD_VERSION=$(grep "^go " go.mod | cut -d' ' -f2)
+        echo "Go version in go.mod: $GO_MOD_VERSION"
+
+        DOCKERFILE_VERSION=$(grep "FROM golang:" Dockerfile | sed 's/.*golang:\([0-9.]*\).*/\1/')
+        echo "Go version in Dockerfile: $DOCKERFILE_VERSION"
+
+        GO_MOD_MAJOR_MINOR=$(echo $GO_MOD_VERSION | cut -d. -f1,2)
+        DOCKERFILE_MAJOR_MINOR=$(echo $DOCKERFILE_VERSION | cut -d. -f1,2)
+
+        echo "Comparing major.minor versions: $GO_MOD_MAJOR_MINOR vs $DOCKERFILE_MAJOR_MINOR"
+
+        if [ "$GO_MOD_MAJOR_MINOR" != "$DOCKERFILE_MAJOR_MINOR" ]; then
+          echo "❌ ERROR: Go version mismatch!"
+          echo "go.mod requires Go $GO_MOD_VERSION (major.minor: $GO_MOD_MAJOR_MINOR)"
+          echo "Dockerfile uses golang:$DOCKERFILE_VERSION (major.minor: $DOCKERFILE_MAJOR_MINOR)"
+          echo "Please update Dockerfile to use golang:$GO_MOD_MAJOR_MINOR-alpine"
+          exit 1
+        fi
+
+        echo "✅ Go versions are compatible"
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
