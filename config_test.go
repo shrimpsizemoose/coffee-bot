@@ -15,12 +15,14 @@ weekend_days = []
 
 [[chats]]
 chat_id = -1001111111111
+alias = "test_chat"
 default_messages = ["Тест 1", "Тест 2"]
 day_messages = { monday = "Понедельник", tuesday = "Вторник" }
 
 [[chats]]
 chat_id = -1002222222222
 topic_id = 2
+alias = "test_topic"
 default_messages = ["Топик тест"]
 day_messages = { friday = "Пятница в топике" }
 `)

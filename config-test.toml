@@ -4,6 +4,7 @@ weekend_days = []
 
 [[chats]]
 chat_id = -1001111111111
+alias = "main_chat"
 default_messages = [
     "Тест: обычный чат - кофе?",
     "Тест: простое сообщение в группу"
@@ -13,6 +14,7 @@ day_messages = { monday = "Понедельник в обычном чате", t
 [[chats]]
 chat_id = -1002222222222
 topic_id = 2
+alias = "dev_topic"
 default_messages = [
     "Тест: сообщение в топик - чай?",
     "Тест: топик работает!"

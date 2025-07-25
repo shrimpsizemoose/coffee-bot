@@ -5,26 +5,77 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/mymmrac/telego"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/robfig/cron/v3"
 )
 
 type ChatConfig struct {
 	ChatID      int64             `toml:"chat_id"`
 	TopicID     *int              `toml:"topic_id,omitempty"`
+	Alias       string            `toml:"alias"`
 	DefaultMsgs []string          `toml:"default_messages"`
 	DayMessages map[string]string `toml:"day_messages"`
 }
 
 type Config struct {
-	TelegramToken string        `toml:"telegram_token"`
-	Schedule      string        `toml:"schedule"`
+	TelegramToken string         `toml:"telegram_token"`
+	Schedule      string         `toml:"schedule"`
 	WeekendDays   []time.Weekday `toml:"weekend_days"`
-	Chats         []ChatConfig  `toml:"chats"`
+	Chats         []ChatConfig   `toml:"chats"`
+}
+
+var (
+	messagesSentTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coffee_messages_sent_total",
+			Help: "Total number of coffee messages sent",
+		},
+		[]string{"chat_alias", "has_topic"},
+	)
+
+	messageErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coffee_message_errors_total",
+			Help: "Total number of message send errors",
+		},
+		[]string{"chat_alias", "error_type"},
+	)
+
+	scheduleRunsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "coffee_schedule_runs_total",
+			Help: "Total number of scheduled job runs",
+		},
+	)
+
+	botStartTime = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "coffee_bot_start_time_seconds",
+			Help: "Unix timestamp when the bot was started",
+		},
+	)
+
+	configuredChats = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "coffee_configured_chats_total",
+			Help: "Number of configured chats",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(messagesSentTotal)
+	prometheus.MustRegister(messageErrorsTotal)
+	prometheus.MustRegister(scheduleRunsTotal)
+	prometheus.MustRegister(botStartTime)
+	prometheus.MustRegister(configuredChats)
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -83,7 +134,7 @@ func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []
 
 	dayName := map[time.Weekday]string{
 		time.Monday:    "monday",
-		time.Tuesday:   "tuesday", 
+		time.Tuesday:   "tuesday",
 		time.Wednesday: "wednesday",
 		time.Thursday:  "thursday",
 		time.Friday:    "friday",
@@ -99,6 +150,15 @@ func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []
 }
 
 func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) error {
+	chatAlias := chatConfig.Alias
+	if chatAlias == "" {
+		chatAlias = fmt.Sprintf("chat_%d", chatConfig.ChatID)
+	}
+	hasTopic := "false"
+	if chatConfig.TopicID != nil {
+		hasTopic = "true"
+	}
+
 	for _, message := range messages {
 		params := &telego.SendMessageParams{
 			ChatID: telego.ChatID{ID: chatConfig.ChatID},
@@ -113,8 +173,11 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 		defer cancel()
 		_, err := bot.SendMessage(ctx, params)
 		if err != nil {
+			messageErrorsTotal.WithLabelValues(chatAlias, "send_failed").Inc()
 			return fmt.Errorf("failed to send message to chat %d: %w", chatConfig.ChatID, err)
 		}
+
+		messagesSentTotal.WithLabelValues(chatAlias, hasTopic).Inc()
 	}
 
 	return nil
@@ -131,6 +194,17 @@ func main() {
 	}
 	config.Tell()
 
+	botStartTime.Set(float64(time.Now().Unix()))
+	configuredChats.Set(float64(len(config.Chats)))
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Println("Starting metrics server on :8080/metrics")
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Printf("Failed to start metrics server: %v", err)
+		}
+	}()
+
 	bot, err := telego.NewBot(config.TelegramToken)
 	if err != nil {
 		log.Fatalf("Failed to create bot: %v", err)
@@ -138,6 +212,7 @@ func main() {
 
 	c := cron.New()
 	_, err = c.AddFunc(config.Schedule, func() {
+		scheduleRunsTotal.Inc()
 		now := time.Now()
 
 		for _, chatConfig := range config.Chats {
