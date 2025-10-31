@@ -123,14 +123,20 @@ func (cc *ChatConfig) getRandomMessage() string {
 }
 
 func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []string {
+	/*
+	Message selection logic:
+	- Both default and day-specific exist: send random default + day-specific message
+	- Only day-specific exists (no defaults): send only the day-specific message
+	- Only defaults exist (no day-specific for today): send random default message
+	- Neither exist: send nothing
+	*/
+	
 	for _, weekend := range weekendDays {
 		if now.Weekday() == weekend {
 			log.Printf("No message on weekend at %v", now)
 			return nil
 		}
 	}
-
-	messages := []string{cc.getRandomMessage()}
 
 	dayName := map[time.Weekday]string{
 		time.Monday:    "monday",
@@ -140,10 +146,21 @@ func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []
 		time.Friday:    "friday",
 	}
 
+	var messages []string
+	var hasDayMessage bool
+
 	if dayKey, exists := dayName[now.Weekday()]; exists {
 		if customMsg, hasMsg := cc.DayMessages[dayKey]; hasMsg && customMsg != "" {
+			hasDayMessage = true
+			if len(cc.DefaultMsgs) > 0 {
+				messages = append(messages, cc.getRandomMessage())
+			}
 			messages = append(messages, customMsg)
 		}
+	}
+
+	if !hasDayMessage && len(cc.DefaultMsgs) > 0 {
+		messages = append(messages, cc.getRandomMessage())
 	}
 
 	return messages
