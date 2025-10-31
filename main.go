@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mymmrac/telego"
@@ -17,11 +19,13 @@ import (
 )
 
 type ChatConfig struct {
-	ChatID      int64             `toml:"chat_id"`
-	TopicID     *int              `toml:"topic_id,omitempty"`
-	Alias       string            `toml:"alias"`
-	DefaultMsgs []string          `toml:"default_messages"`
-	DayMessages map[string]string `toml:"day_messages"`
+	ChatID         int64             `toml:"chat_id"`
+	TopicID        *int              `toml:"topic_id,omitempty"`
+	Alias          string            `toml:"alias"`
+	DefaultMsgs    []string          `toml:"default_messages"`
+	DayMessages    map[string]string `toml:"day_messages"`
+	WeatherEnabled bool              `toml:"weather_enabled"`
+	WeatherCities  []string          `toml:"weather_cities"`
 }
 
 type Config struct {
@@ -118,19 +122,57 @@ func (c *Config) Tell() {
 	}
 }
 
+func fetchWeather(cities []string) string {
+	if len(cities) == 0 {
+		return ""
+	}
+
+	citiesParam := strings.Join(cities, ",")
+	url := fmt.Sprintf("http://wttr.in/{%s}?format=3", citiesParam)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Printf("Failed to create weather request: %v", err)
+		return ""
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Failed to fetch weather: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Weather API returned status %d", resp.StatusCode)
+		return ""
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read weather response: %v", err)
+		return ""
+	}
+
+	return strings.TrimSpace(string(body))
+}
+
 func (cc *ChatConfig) getRandomMessage() string {
 	return cc.DefaultMsgs[rand.Intn(len(cc.DefaultMsgs))]
 }
 
 func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []string {
 	/*
-	Message selection logic:
-	- Both default and day-specific exist: send random default + day-specific message
-	- Only day-specific exists (no defaults): send only the day-specific message
-	- Only defaults exist (no day-specific for today): send random default message
-	- Neither exist: send nothing
+		Message selection logic:
+		- Both default and day-specific exist: send random default + day-specific message
+		- Only day-specific exists (no defaults): send only the day-specific message
+		- Only defaults exist (no day-specific for today): send random default message
+		- Neither exist: send nothing
 	*/
-	
+
 	for _, weekend := range weekendDays {
 		if now.Weekday() == weekend {
 			log.Printf("No message on weekend at %v", now)
@@ -176,10 +218,20 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 		hasTopic = "true"
 	}
 
+	var weather string
+	if chatConfig.WeatherEnabled {
+		weather = fetchWeather(chatConfig.WeatherCities)
+	}
+
 	for _, message := range messages {
+		messageText := message
+		if weather != "" {
+			messageText = fmt.Sprintf("%s\n\n%s", message, weather)
+		}
+
 		params := &telego.SendMessageParams{
 			ChatID: telego.ChatID{ID: chatConfig.ChatID},
-			Text:   message,
+			Text:   messageText,
 		}
 
 		if chatConfig.TopicID != nil {

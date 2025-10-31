@@ -10,6 +10,8 @@ default_messages = [
     "Тест: простое сообщение в группу"
 ]
 day_messages = { monday = "Понедельник в обычном чате", tuesday = "Вторник - тест обычного чата" }
+weather_enabled = true
+weather_cities = ["Barcelona", "Linkoping"]
 
 [[chats]]
 chat_id = -1002222222222
@@ -20,3 +22,4 @@ default_messages = [
     "Тест: топик работает!"
 ]
 day_messages = { monday = "Понедельник в топике", tuesday = "Вторник - тест топика" }
+weather_enabled = false
