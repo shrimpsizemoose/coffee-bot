@@ -36,6 +36,8 @@ type Config struct {
 }
 
 var (
+	debugMode bool
+
 	messagesSentTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "coffee_messages_sent_total",
@@ -119,6 +121,10 @@ func (c *Config) Tell() {
 		if len(customDays) > 0 {
 			log.Printf("  Custom messages for: %v", customDays)
 		}
+
+		if chat.WeatherEnabled {
+			log.Printf("  Weather enabled for cities: %v", chat.WeatherCities)
+		}
 	}
 }
 
@@ -126,6 +132,8 @@ func fetchWeather(cities []string) string {
 	if len(cities) == 0 {
 		return ""
 	}
+
+	log.Printf("Fetching weather for cities: %v", cities)
 
 	citiesParam := strings.Join(cities, ",")
 	url := fmt.Sprintf("http://wttr.in/{%s}?format=3", citiesParam)
@@ -157,7 +165,9 @@ func fetchWeather(cities []string) string {
 		return ""
 	}
 
-	return strings.TrimSpace(string(body))
+	result := strings.TrimSpace(string(body))
+	log.Printf("Weather fetched successfully: %s", result)
+	return result
 }
 
 func (cc *ChatConfig) getRandomMessage() string {
@@ -205,6 +215,10 @@ func (cc *ChatConfig) PickMessages(now time.Time, weekendDays []time.Weekday) []
 		messages = append(messages, cc.getRandomMessage())
 	}
 
+	if len(messages) == 0 && debugMode {
+		log.Printf("No messages available to send (chat has no default messages and no day-specific message for today)")
+	}
+
 	return messages
 }
 
@@ -220,7 +234,11 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 
 	var weather string
 	if chatConfig.WeatherEnabled {
+		log.Printf("Weather enabled for chat %s, fetching...", chatAlias)
 		weather = fetchWeather(chatConfig.WeatherCities)
+		if weather == "" {
+			log.Printf("Weather fetch returned empty for chat %s", chatAlias)
+		}
 	}
 
 	for _, message := range messages {
@@ -253,6 +271,11 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 }
 
 func main() {
+	debugMode = os.Getenv("DEBUG") == "true"
+	if debugMode {
+		log.Println("Debug mode enabled")
+	}
+
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "config.toml"
@@ -278,6 +301,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create bot: %v", err)
 	}
+	log.Println("Telegram bot initialized successfully")
 
 	c := cron.New()
 	_, err = c.AddFunc(config.Schedule, func() {
@@ -286,16 +310,20 @@ func main() {
 
 		for _, chatConfig := range config.Chats {
 			messages := chatConfig.PickMessages(now, config.WeekendDays)
-			if len(messages) > 0 {
-				if err := sendMessage(bot, chatConfig, messages); err != nil {
-					log.Printf("Failed to send messages to chat %d: %v", chatConfig.ChatID, err)
-				} else {
-					topicInfo := ""
-					if chatConfig.TopicID != nil {
-						topicInfo = fmt.Sprintf(" (topic %d)", *chatConfig.TopicID)
-					}
-					log.Printf("%d Message(s) sent to chat %d%s on %v", len(messages), chatConfig.ChatID, topicInfo, now)
+			if len(messages) == 0 {
+				if debugMode {
+					log.Printf("No messages selected for chat %d on %v", chatConfig.ChatID, now)
 				}
+				continue
+			}
+			if err := sendMessage(bot, chatConfig, messages); err != nil {
+				log.Printf("Failed to send messages to chat %d: %v", chatConfig.ChatID, err)
+			} else {
+				topicInfo := ""
+				if chatConfig.TopicID != nil {
+					topicInfo = fmt.Sprintf(" (topic %d)", *chatConfig.TopicID)
+				}
+				log.Printf("%d Message(s) sent to chat %d%s on %v", len(messages), chatConfig.ChatID, topicInfo, now)
 			}
 		}
 	})
@@ -303,6 +331,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to schedule job: %v", err)
 	}
+	log.Printf("Cron job scheduled successfully with pattern: %s", config.Schedule)
 
 	log.Println("Starting coffee chat notifier...")
 	c.Start()
