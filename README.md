@@ -9,6 +9,7 @@ A Telegram bot that sends scheduled coffee/tea reminder messages to multiple cha
 - **Custom schedules**: Configurable cron schedules for message delivery
 - **Day-specific messages**: Different messages for different days of the week
 - **Weekend handling**: Skip messages on configured weekend days
+- **Weather integration**: Optional per-chat weather reports from wttr.in
 - **Prometheus metrics**: Built-in monitoring and observability
 - **Flexible configuration**: TOML-based configuration with inline tables
 
@@ -36,13 +37,43 @@ alias = "main_chat"
 default_messages = ["Good morning! Coffee time?"]
 day_messages = { monday = "Monday motivation!" }
 
-# Chat with topic support  
+# Chat with topic support and weather
 [[chats]]
 chat_id = -1009876543210
 topic_id = 2
 alias = "dev_team"
+weather_enabled = true
+weather_cities = ["Katmandu", "Perth"]
 default_messages = ["Morning team! ☕"]
 day_messages = { friday = "TGIF coffee break!" }
+```
+
+## Weather Integration
+
+Add optional weather reports to your messages on a per-chat basis:
+
+```toml
+[[chats]]
+chat_id = -1001234567890
+alias = "morning_chat"
+weather_enabled = true
+weather_cities = ["Katmandu", "Perth"]
+default_messages = ["Good morning! ☕"]
+```
+
+**Features:**
+- Enable/disable weather per chat with `weather_enabled`
+- Specify multiple cities with `weather_cities` array
+- Weather data fetched from wttr.in API
+- Weather information appended after your message text
+- Automatic timeout handling (10 seconds)
+
+**Example output:**
+```
+Good morning! ☕
+
+Katmandu: ⛅️ +18°C
+Perth: ☀️ +25°C
 ```
 
 ## Prometheus Metrics
