@@ -88,26 +88,69 @@ func TestFetchWeather(t *testing.T) {
 		}
 	})
 
-	t.Run("successful fetch", func(t *testing.T) {
-		mockResponse := "Barcelona: ☀️ +20°C\nMadrid: ⛅ +18°C"
+	t.Run("three cities concatenated with newlines", func(t *testing.T) {
+		// Mock server that returns different weather for each city
+		callCount := 0
+		cityResponses := map[string]string{
+			"Barcelona": "Barcelona: ☀️ +20°C",
+			"Linkoping": "Linkoping: ☁️ +4°C",
+			"Moscow":    "Moscow: 🌨 -2°C",
+		}
+
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.Contains(r.URL.Path, "Barcelona,Madrid") {
-				t.Errorf("Expected cities in URL path, got %s", r.URL.Path)
+			callCount++
+			// Extract city from path like "/Barcelona?format=3"
+			path := strings.TrimPrefix(r.URL.Path, "/")
+			city := path
+
+			response, exists := cityResponses[city]
+			if !exists {
+				t.Errorf("Unexpected city requested: %s", city)
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
+
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(mockResponse))
+			w.Write([]byte(response))
 		}))
 		defer server.Close()
 
-		// can't test actual wttr.in call without making real HTTP requests,
-		// so just verify the function doesn't crash with valid input
-		result := fetchWeather([]string{"Barcelona", "Madrid"})
-		// result could be empty if wttr.in is down, just check it doesn't panic
-		t.Logf("Weather fetch result: '%s'", result)
+		result := fetchWeatherFromURL([]string{"Barcelona", "Linkoping", "Moscow"}, server.URL)
+
+		// Check that we got 3 separate requests
+		if callCount != 3 {
+			t.Errorf("Expected 3 HTTP calls, got %d", callCount)
+		}
+
+		// Check that result contains all three cities on separate lines
+		lines := strings.Split(result, "\n")
+		if len(lines) != 3 {
+			t.Errorf("Expected 3 lines in result, got %d: %v", len(lines), lines)
+		}
+
+		if !strings.Contains(result, "Barcelona: ☀️ +20°C") {
+			t.Errorf("Result missing Barcelona weather: %s", result)
+		}
+		if !strings.Contains(result, "Linkoping: ☁️ +4°C") {
+			t.Errorf("Result missing Linkoping weather: %s", result)
+		}
+		if !strings.Contains(result, "Moscow: 🌨 -2°C") {
+			t.Errorf("Result missing Moscow weather: %s", result)
+		}
+
+		t.Logf("✓ Weather correctly concatenated:\n%s", result)
 	})
 
 	t.Run("single city", func(t *testing.T) {
-		result := fetchWeather([]string{"London"})
-		t.Logf("Single city weather: '%s'", result) // (verify it doesn't crash)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("London: ⛅ +12°C"))
+		}))
+		defer server.Close()
+
+		result := fetchWeatherFromURL([]string{"London"}, server.URL)
+		if result != "London: ⛅ +12°C" {
+			t.Errorf("Expected 'London: ⛅ +12°C', got '%s'", result)
+		}
 	})
 }

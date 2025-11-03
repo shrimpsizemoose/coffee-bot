@@ -128,46 +128,61 @@ func (c *Config) Tell() {
 	}
 }
 
-func fetchWeather(cities []string) string {
+func fetchWeatherFromURL(cities []string, baseURL string) string {
 	if len(cities) == 0 {
 		return ""
 	}
 
 	log.Printf("Fetching weather for cities: %v", cities)
 
-	citiesParam := strings.Join(cities, ",")
-	url := fmt.Sprintf("http://wttr.in/{%s}?format=3", citiesParam)
+	var weatherLines []string
+	for _, city := range cities {
+		url := fmt.Sprintf("%s/%s?format=3", baseURL, city)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			log.Printf("Failed to create weather request for %s: %v", city, err)
+			cancel()
+			continue
+		}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		log.Printf("Failed to create weather request: %v", err)
-		return ""
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("Failed to fetch weather for %s: %v", city, err)
+			cancel()
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Weather API returned status %d for %s", resp.StatusCode, city)
+			resp.Body.Close()
+			cancel()
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+
+		if err != nil {
+			log.Printf("Failed to read weather response for %s: %v", city, err)
+			continue
+		}
+
+		line := strings.TrimSpace(string(body))
+		if line != "" {
+			weatherLines = append(weatherLines, line)
+		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("Failed to fetch weather: %v", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Weather API returned status %d", resp.StatusCode)
-		return ""
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Failed to read weather response: %v", err)
-		return ""
-	}
-
-	result := strings.TrimSpace(string(body))
+	result := strings.Join(weatherLines, "\n")
 	log.Printf("Weather fetched successfully: %s", result)
 	return result
+}
+
+func fetchWeather(cities []string) string {
+	return fetchWeatherFromURL(cities, "http://wttr.in")
 }
 
 func (cc *ChatConfig) getRandomMessage() string {
