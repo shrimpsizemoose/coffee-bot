@@ -7,6 +7,10 @@ on:
         description: 'Version to release (e.g., v1.2.1)'
         required: true
         type: string
+      annotation:
+        description: 'Release annotation/tagline (optional)'
+        required: false
+        type: string
 
 jobs:
   release:
@@ -61,6 +65,22 @@ jobs:
     - name: Test Docker build
       run: docker build -t coffee-bot:${{ github.event.inputs.version }} .
 
+    - name: Generate changelog
+      id: changelog
+      run: |
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "No previous tag found, including all commits"
+          CHANGELOG=$(git log --pretty=format:"* %s (%h)" --reverse)
+        else
+          echo "Generating changelog from $PREVIOUS_TAG to HEAD"
+          CHANGELOG=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"* %s (%h)" --reverse)
+        fi
+
+        # Save changelog to file to handle multiline properly
+        echo "$CHANGELOG" > /tmp/changelog.txt
+        echo "changelog_file=/tmp/changelog.txt" >> $GITHUB_OUTPUT
+
     - name: Create and push tag
       run: |
         git config user.name "github-actions[bot]"
@@ -69,6 +89,38 @@ jobs:
         git push origin ${{ github.event.inputs.version }}
         echo "✅ Tag ${{ github.event.inputs.version }} created and pushed"
 
+    - name: Create release body
+      id: release_body
+      run: |
+        BODY_FILE=/tmp/release_body.md
+
+        # Start with annotation if provided
+        if [ -n "${{ github.event.inputs.annotation }}" ]; then
+          echo "${{ github.event.inputs.annotation }}" > $BODY_FILE
+          echo "" >> $BODY_FILE
+          echo "" >> $BODY_FILE
+        else
+          touch $BODY_FILE
+        fi
+
+        # Add changelog section
+        echo "## Changes" >> $BODY_FILE
+        echo "" >> $BODY_FILE
+        cat ${{ steps.changelog.outputs.changelog_file }} >> $BODY_FILE
+        echo "" >> $BODY_FILE
+        echo "" >> $BODY_FILE
+
+        # Add Docker image section
+        echo "## Docker Image" >> $BODY_FILE
+        echo "" >> $BODY_FILE
+        echo '```bash' >> $BODY_FILE
+        echo "docker pull ghcr.io/shrimpsizemoose/coffee-bot:${{ github.event.inputs.version }}" >> $BODY_FILE
+        echo '```' >> $BODY_FILE
+        echo "" >> $BODY_FILE
+        echo "🤖 Generated automatically" >> $BODY_FILE
+
+        echo "release_body_file=$BODY_FILE" >> $GITHUB_OUTPUT
+
     - name: Create GitHub Release
       uses: actions/create-release@v1
       env:
@@ -76,17 +128,6 @@ jobs:
       with:
         tag_name: ${{ github.event.inputs.version }}
         release_name: ${{ github.event.inputs.version }}
-        body: |
-          ## Changes
-
-          See commit history for details.
-          
-          ## Docker Image
-
-          ```bash
-          docker pull ghcr.io/shrimpsizemoose/coffee-bot:${{ github.event.inputs.version }}
-          ```
-
-          🤖 Generated automatically
+        body_path: ${{ steps.release_body.outputs.release_body_file }}
         draft: false
         prerelease: false
