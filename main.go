@@ -256,9 +256,10 @@ func sendMessage(bot *telego.Bot, chatConfig ChatConfig, messages []string) erro
 		}
 	}
 
-	for _, message := range messages {
+	for i, message := range messages {
 		messageText := message
-		if weather != "" {
+		// Append weather only to the last message
+		if weather != "" && i == len(messages)-1 {
 			messageText = fmt.Sprintf("%s\n\n%s", message, weather)
 		}
 
