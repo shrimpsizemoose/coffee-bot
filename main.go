@@ -36,7 +36,8 @@ type Config struct {
 }
 
 var (
-	debugMode bool
+	debugMode         bool
+	skipRetryBackoff  bool // Set to true in tests to skip sleep delays
 
 	messagesSentTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -74,6 +75,22 @@ var (
 			Help: "Number of configured chats",
 		},
 	)
+
+	weatherFetchTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coffee_weather_fetch_total",
+			Help: "Total number of weather fetch attempts per city",
+		},
+		[]string{"city", "status"},
+	)
+
+	weatherRetryTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coffee_weather_retry_total",
+			Help: "Total number of weather fetch retries per city",
+		},
+		[]string{"city"},
+	)
 )
 
 func init() {
@@ -82,6 +99,8 @@ func init() {
 	prometheus.MustRegister(scheduleRunsTotal)
 	prometheus.MustRegister(botStartTime)
 	prometheus.MustRegister(configuredChats)
+	prometheus.MustRegister(weatherFetchTotal)
+	prometheus.MustRegister(weatherRetryTotal)
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -128,34 +147,45 @@ func (c *Config) Tell() {
 	}
 }
 
-func fetchWeatherFromURL(cities []string, baseURL string) string {
-	if len(cities) == 0 {
-		return ""
-	}
+func fetchWeatherForCity(city, baseURL string, maxRetries int) (string, error) {
+	url := fmt.Sprintf("%s/%s?format=3", baseURL, city)
 
-	log.Printf("Fetching weather for cities: %v", cities)
-
-	var weatherLines []string
-	for _, city := range cities {
-		url := fmt.Sprintf("%s/%s?format=3", baseURL, city)
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt > 1 {
+			// Backoff: 1s, 10s
+			var backoff time.Duration
+			if attempt == 2 {
+				backoff = 1 * time.Second
+			} else {
+				backoff = 10 * time.Second
+			}
+			weatherRetryTotal.WithLabelValues(city).Inc()
+			if debugMode {
+				log.Printf("Retry attempt %d/%d for %s after %v", attempt, maxRetries, city, backoff)
+			}
+			if !skipRetryBackoff {
+				time.Sleep(backoff)
+			}
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			log.Printf("Failed to create weather request for %s: %v", city, err)
+			lastErr = fmt.Errorf("failed to create request: %w", err)
 			cancel()
 			continue
 		}
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Printf("Failed to fetch weather for %s: %v", city, err)
+			lastErr = fmt.Errorf("request failed: %w", err)
 			cancel()
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("Weather API returned status %d for %s", resp.StatusCode, city)
+			lastErr = fmt.Errorf("API returned status %d", resp.StatusCode)
 			resp.Body.Close()
 			cancel()
 			continue
@@ -166,18 +196,49 @@ func fetchWeatherFromURL(cities []string, baseURL string) string {
 		cancel()
 
 		if err != nil {
-			log.Printf("Failed to read weather response for %s: %v", city, err)
+			lastErr = fmt.Errorf("failed to read response: %w", err)
 			continue
 		}
 
 		line := strings.TrimSpace(string(body))
 		if line != "" {
-			weatherLines = append(weatherLines, line)
+			if attempt > 1 {
+				log.Printf("Successfully fetched weather for %s on attempt %d", city, attempt)
+			}
+			weatherFetchTotal.WithLabelValues(city, "success").Inc()
+			return line, nil
 		}
+		lastErr = fmt.Errorf("empty response")
+	}
+
+	weatherFetchTotal.WithLabelValues(city, "failed").Inc()
+	return "", lastErr
+}
+
+func fetchWeatherFromURL(cities []string, baseURL string) string {
+	if len(cities) == 0 {
+		return ""
+	}
+
+	maxRetries := 3
+	log.Printf("Fetching weather for cities: %v (max %d retries per city)", cities, maxRetries)
+
+	var weatherLines []string
+	for _, city := range cities {
+		line, err := fetchWeatherForCity(city, baseURL, maxRetries)
+		if err != nil {
+			log.Printf("Failed to fetch weather for %s after %d attempts: %v", city, maxRetries, err)
+			continue
+		}
+		weatherLines = append(weatherLines, line)
 	}
 
 	result := strings.Join(weatherLines, "\n")
-	log.Printf("Weather fetched successfully: %s", result)
+	if result != "" {
+		log.Printf("Weather fetched successfully: %s", result)
+	} else {
+		log.Printf("No weather data could be fetched for any city")
+	}
 	return result
 }
 

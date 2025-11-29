@@ -66,7 +66,9 @@ default_messages = ["Good morning! ☕"]
 - Specify multiple cities with `weather_cities` array
 - Weather data fetched from wttr.in API
 - Weather information appended after your message text
-- Automatic timeout handling (10 seconds)
+- Automatic timeout handling (10 seconds per attempt)
+- **Automatic retry with backoff**: Up to 3 attempts per city (1s, 10s backoff)
+- Failed cities are logged but don't block successful fetches
 
 **Example output:**
 ```
@@ -85,6 +87,8 @@ The bot exposes metrics on `http://localhost:8080/metrics` for monitoring:
 - `coffee_schedule_runs_total` - Count of cron job executions
 - `coffee_bot_start_time_seconds` - Bot startup timestamp
 - `coffee_configured_chats_total` - Number of configured chats
+- `coffee_weather_fetch_total{city, status}` - Weather fetch attempts per city (success/failed)
+- `coffee_weather_retry_total{city}` - Weather fetch retries per city
 
 **Privacy**: Metrics use the `alias` field from your config, never real chat IDs.
 
