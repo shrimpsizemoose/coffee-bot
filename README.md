@@ -103,6 +103,16 @@ Add to your Prometheus config:
   scrape_interval: 15s
 ```
 
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TELEGRAM_TOKEN` | Bot token (takes precedence over config file) | - |
+| `CONFIG_PATH` | Path to TOML config file | `config.toml` |
+| `DEBUG` | Enable debug logging | `false` |
+
+For Kubernetes deployments, use `TELEGRAM_TOKEN` environment variable with a Secret instead of storing the token in the config file.
+
 ## Development
 
 ```bash
@@ -114,6 +124,9 @@ go build -o coffee-bot main.go
 
 # Run with custom config
 CONFIG_PATH=config-test.toml ./coffee-bot
+
+# Run with token from env (recommended for k8s)
+TELEGRAM_TOKEN=your-token ./coffee-bot
 
 # Check metrics
 curl http://localhost:8080/metrics

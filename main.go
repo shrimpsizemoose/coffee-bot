@@ -361,6 +361,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Environment variable takes precedence over config file
+	if token := os.Getenv("TELEGRAM_TOKEN"); token != "" {
+		config.TelegramToken = token
+		log.Println("Using Telegram token from TELEGRAM_TOKEN environment variable")
+	}
+
 	config.Tell()
 
 	botStartTime.Set(float64(time.Now().Unix()))
